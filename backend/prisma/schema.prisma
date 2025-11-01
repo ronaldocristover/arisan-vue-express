@@ -1,0 +1,151 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  password  String
+  name      String?
+  role      String   @default("user") // admin, user
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("users")
+}
+
+model Member {
+  id             Int       @id @default(autoincrement())
+  fullName       String
+  nickname       String
+  altName        String?   // alternative name
+  whatsappNumber String?   // WhatsApp number
+  group          String?
+  remarks        String?
+  status         String    @default("active") // active, inactive
+  joinedDate     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  payments       Payment[]
+  winners        Winner[]
+  notes          Note[]
+
+  @@map("members")
+}
+
+model Period {
+  id            Int       @id @default(autoincrement())
+  month         Int       // 1-12
+  year          Int
+  principal     Decimal   @db.Decimal(10, 2)
+  fee           Decimal   @db.Decimal(10, 2)
+  status        String    @default("open") // open, closed
+  startDate     DateTime
+  endDate       DateTime?
+  isCurrent     Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  payments      Payment[]
+  winners       Winner[]
+  notes         Note[]
+
+  @@unique([month, year], name: "period_month_year_unique")
+  @@map("periods")
+}
+
+model Payment {
+  id            Int       @id @default(autoincrement())
+  memberId      Int
+  periodId      Int
+  amount        Decimal   @db.Decimal(10, 2)
+  status        String    @default("unpaid") // paid, unpaid
+  paymentDate   DateTime?
+  paymentMethod String?   // cash, transfer, etc
+  attachment    String?   // file path or URL for payment attachment
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  member        Member    @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  period        Period    @relation(fields: [periodId], references: [id], onDelete: Cascade)
+  transactions  Transaction[]
+
+  @@unique([memberId, periodId])
+  @@map("payments")
+}
+
+model Winner {
+  id            Int       @id @default(autoincrement())
+  memberId      Int
+  periodId      Int
+  amount        Decimal   @db.Decimal(10, 2)
+  drawDate      DateTime  @default(now())
+  moneyGivenDate DateTime?
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  member        Member    @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  period        Period    @relation(fields: [periodId], references: [id], onDelete: Cascade)
+  transaction   Transaction?
+
+  @@unique([periodId])
+  @@map("winners")
+}
+
+model Note {
+  id          Int       @id @default(autoincrement())
+  type        String    // Payment Issue, Reminder, General, Complaint
+  title       String
+  content     String    @db.Text
+  priority    String    @default("medium") // high, medium, low
+  status      String    @default("unresolved") // resolved, unresolved
+  memberId    Int?
+  periodId    Int?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  member      Member?   @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  period      Period?   @relation(fields: [periodId], references: [id], onDelete: SetNull)
+
+  @@map("notes")
+}
+
+model Setting {
+  id        Int      @id @default(autoincrement())
+  key       String   @unique
+  value     String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("settings")
+}
+
+model Transaction {
+  id          Int       @id @default(autoincrement())
+  type        String    // income, expense
+  amount      Decimal   @db.Decimal(10, 2)
+  category    String    // payment, winner, other
+  description String    @db.Text
+  notes       String?   @db.Text
+  transactionDate DateTime @default(now())
+  paymentId   Int?
+  winnerId    Int?      @unique
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  payment     Payment?  @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  winner      Winner?   @relation(fields: [winnerId], references: [id], onDelete: SetNull)
+
+  @@map("transactions")
+}
