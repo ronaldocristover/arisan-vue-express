@@ -94,7 +94,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue';
+import { ref, onMounted, watch, computed } from 'vue';
 import { winnerService } from '../services/winnerService';
 import { periodService } from '../services/periodService';
 import { memberService } from '../services/memberService';
@@ -104,12 +104,45 @@ import { useToast } from '../utils/toast';
 
 const { showToast } = useToast();
 const winners = ref<any[]>([]);
+const pagination = ref<any>(null);
+const currentPage = ref(1);
+const pageSize = ref(10);
+const searchQuery = ref('');
 const openPeriods = ref<any[]>([]);
 const eligibleMembers = ref<any[]>([]);
 const showSelectModal = ref(false);
 const form = ref({
   periodId: null as number | null,
   memberId: null as number | null
+});
+
+const visiblePages = computed(() => {
+  if (!pagination.value) return [];
+  
+  const total = pagination.value.totalPages;
+  const current = pagination.value.page;
+  const pages: (number | string)[] = [];
+  
+  if (total <= 7) {
+    for (let i = 1; i <= total; i++) {
+      pages.push(i);
+    }
+  } else {
+    pages.push(1);
+    if (current > 3) {
+      pages.push('...');
+    }
+    const start = Math.max(2, current - 1);
+    const end = Math.min(total - 1, current + 1);
+    for (let i = start; i <= end; i++) {
+      pages.push(i);
+    }
+    if (current < total - 2) {
+      pages.push('...');
+    }
+    pages.push(total);
+  }
+  return pages;
 });
 
 const formatCurrency = (amount: number | string) => {
@@ -128,11 +161,30 @@ const getMonthName = (month: number) => {
 
 const loadWinners = async () => {
   try {
-    const response = await winnerService.getAll();
+    const params: any = {
+      page: currentPage.value,
+      limit: pageSize.value
+    };
+    if (searchQuery.value) params.search = searchQuery.value;
+    
+    const response = await winnerService.getAll(params);
     winners.value = response.winners;
+    pagination.value = response.pagination;
   } catch (error) {
     showToast('Failed to load winners', 'error');
   }
+};
+
+const goToPage = (page: number | string) => {
+  if (typeof page === 'string' || !pagination.value) return;
+  if (page < 1 || page > pagination.value.totalPages) return;
+  currentPage.value = page;
+  loadWinners();
+};
+
+const handleSearch = () => {
+  currentPage.value = 1;
+  loadWinners();
 };
 
 const loadOpenPeriods = async () => {

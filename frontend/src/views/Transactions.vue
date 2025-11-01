@@ -34,7 +34,17 @@
 
     <!-- Filters -->
     <div class="bg-white shadow rounded-lg p-4 mb-6">
-      <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">Search</label>
+          <input
+            v-model="filters.search"
+            type="text"
+            placeholder="Search description or notes..."
+            class="block w-full rounded-md border-gray-300 shadow-sm"
+            @input="handleSearch"
+          />
+        </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-2">Type</label>
           <select
@@ -82,7 +92,7 @@
       <div class="mt-4">
         <button
           @click="clearFilters"
-          class="text-sm text-sky-500 hover:text-sky-700"
+          class="text-sm text-gray-600 hover:text-gray-800"
         >
           Clear Filters
         </button>
@@ -168,8 +178,85 @@
               </button>
             </td>
           </tr>
-        </tbody>
-      </table>
+            </tbody>
+          </table>
+        </div>
+
+    <!-- Pagination -->
+    <div v-if="pagination && pagination.totalPages > 1" class="bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6 mt-4">
+      <div class="flex-1 flex justify-between sm:hidden">
+        <button
+          @click="goToPage(pagination.page - 1)"
+          :disabled="!pagination.hasPrevPage"
+          class="relative inline-flex items-center px-4 py-2 border border-gray-300 text-base font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Previous
+        </button>
+        <button
+          @click="goToPage(pagination.page + 1)"
+          :disabled="!pagination.hasNextPage"
+          class="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-base font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Next
+        </button>
+      </div>
+      <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+        <div>
+          <p class="text-base text-gray-700">
+            Showing
+            <span class="font-medium">{{ ((pagination.page - 1) * pagination.limit) + 1 }}</span>
+            to
+            <span class="font-medium">{{ Math.min(pagination.page * pagination.limit, pagination.total) }}</span>
+            of
+            <span class="font-medium">{{ pagination.total }}</span>
+            results
+          </p>
+        </div>
+        <div>
+          <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+            <button
+              @click="goToPage(pagination.page - 1)"
+              :disabled="!pagination.hasPrevPage"
+              class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-base font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <span class="sr-only">Previous</span>
+              <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd" />
+              </svg>
+            </button>
+            <template v-for="page in visiblePages" :key="typeof page === 'string' ? page : `page-${page}`">
+              <span
+                v-if="typeof page === 'string'"
+                class="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-base font-medium text-gray-700"
+              >
+                {{ page }}
+              </span>
+              <button
+                v-else
+                @click="goToPage(page)"
+                :class="[
+                  page === pagination.page
+                    ? 'z-10 bg-gray-50 border-gray-500 text-gray-900'
+                    : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50',
+                  'relative inline-flex items-center px-4 py-2 border text-base font-medium'
+                ]"
+              >
+                {{ page }}
+              </button>
+            </template>
+            <button
+              @click="goToPage(pagination.page + 1)"
+              :disabled="!pagination.hasNextPage"
+              class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-base font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <span class="sr-only">Next</span>
+              <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
+              </svg>
+            </button>
+          </nav>
+        </div>
+      </div>
     </div>
 
     <!-- Add/Edit Modal -->
@@ -244,7 +331,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed, watch } from 'vue';
 import { transactionService, type Transaction } from '../services/transactionService';
 import { useToast } from '../utils/toast';
 import Modal from '../components/Modal.vue';
@@ -253,6 +340,9 @@ import Button from '../components/Button.vue';
 const { showToast } = useToast();
 const loading = ref(false);
 const transactions = ref<Transaction[]>([]);
+const pagination = ref<any>(null);
+const currentPage = ref(1);
+const pageSize = ref(10);
 const summary = ref<any>(null);
 const showModal = ref(false);
 const editingTransaction = ref<Transaction | null>(null);
@@ -265,10 +355,40 @@ const transactionForm = ref({
   transactionDate: new Date().toISOString().slice(0, 16)
 });
 const filters = ref({
+  search: '',
   type: '',
   category: '',
   startDate: '',
   endDate: ''
+});
+
+const visiblePages = computed(() => {
+  if (!pagination.value) return [];
+  
+  const total = pagination.value.totalPages;
+  const current = pagination.value.page;
+  const pages: (number | string)[] = [];
+  
+  if (total <= 7) {
+    for (let i = 1; i <= total; i++) {
+      pages.push(i);
+    }
+  } else {
+    pages.push(1);
+    if (current > 3) {
+      pages.push('...');
+    }
+    const start = Math.max(2, current - 1);
+    const end = Math.min(total - 1, current + 1);
+    for (let i = start; i <= end; i++) {
+      pages.push(i);
+    }
+    if (current < total - 2) {
+      pages.push('...');
+    }
+    pages.push(total);
+  }
+  return pages;
 });
 
 const formatCurrency = (amount: number | string) => {
@@ -288,7 +408,11 @@ const getMonthName = (month: number) => {
 const loadTransactions = async () => {
   try {
     loading.value = true;
-    const params: any = {};
+    const params: any = {
+      page: currentPage.value,
+      limit: pageSize.value
+    };
+    if (filters.value.search) params.search = filters.value.search;
     if (filters.value.type) params.type = filters.value.type;
     if (filters.value.category) params.category = filters.value.category;
     if (filters.value.startDate) params.startDate = filters.value.startDate;
@@ -296,10 +420,16 @@ const loadTransactions = async () => {
 
     const [transactionsRes, summaryRes] = await Promise.all([
       transactionService.getAll(params),
-      transactionService.getSummary(params)
+      transactionService.getSummary({
+        type: filters.value.type || undefined,
+        category: filters.value.category || undefined,
+        startDate: filters.value.startDate || undefined,
+        endDate: filters.value.endDate || undefined
+      })
     ]);
 
     transactions.value = transactionsRes.transactions || [];
+    pagination.value = transactionsRes.pagination;
     summary.value = summaryRes;
   } catch (error: any) {
     showToast(error.response?.data?.error || 'Failed to load transactions', 'error');
@@ -308,15 +438,34 @@ const loadTransactions = async () => {
   }
 };
 
+const goToPage = (page: number | string) => {
+  if (typeof page === 'string' || !pagination.value) return;
+  if (page < 1 || page > pagination.value.totalPages) return;
+  currentPage.value = page;
+  loadTransactions();
+};
+
+const handleSearch = () => {
+  currentPage.value = 1;
+  loadTransactions();
+};
+
 const clearFilters = () => {
   filters.value = {
+    search: '',
     type: '',
     category: '',
     startDate: '',
     endDate: ''
   };
+  currentPage.value = 1;
   loadTransactions();
 };
+
+watch([() => filters.value.type, () => filters.value.category, () => filters.value.startDate, () => filters.value.endDate], () => {
+  currentPage.value = 1;
+  loadTransactions();
+});
 
 const openAddModal = () => {
   editingTransaction.value = null;

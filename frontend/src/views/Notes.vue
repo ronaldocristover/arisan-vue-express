@@ -6,10 +6,53 @@
           v-model="searchQuery"
           type="text"
           placeholder="Search notes..."
-          class="block w-full rounded-md border-gray-300 shadow-sm"
+          class="block w-full rounded-md border-gray-300 shadow-sm focus:border-gray-400 focus:ring-gray-400"
+          @input="handleSearch"
         />
       </div>
       <Button @click="showCreateModal = true">Add Note</Button>
+    </div>
+
+    <div class="mb-4 flex items-center space-x-4">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Filter by Type</label>
+        <select
+          v-model="typeFilter"
+          @change="loadNotes"
+          class="block w-full rounded-md border-gray-300 shadow-sm"
+        >
+          <option value="">All Types</option>
+          <option value="Payment Issue">Payment Issue</option>
+          <option value="Reminder">Reminder</option>
+          <option value="General">General</option>
+          <option value="Complaint">Complaint</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Filter by Priority</label>
+        <select
+          v-model="priorityFilter"
+          @change="loadNotes"
+          class="block w-full rounded-md border-gray-300 shadow-sm"
+        >
+          <option value="">All Priorities</option>
+          <option value="low">Low</option>
+          <option value="medium">Medium</option>
+          <option value="high">High</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Filter by Status</label>
+        <select
+          v-model="statusFilter"
+          @change="loadNotes"
+          class="block w-full rounded-md border-gray-300 shadow-sm"
+        >
+          <option value="">All Status</option>
+          <option value="unresolved">Unresolved</option>
+          <option value="resolved">Resolved</option>
+        </select>
+      </div>
     </div>
 
     <div class="bg-white shadow overflow-hidden sm:rounded-md">
@@ -25,10 +68,13 @@
           </tr>
         </thead>
         <tbody class="bg-white divide-y divide-gray-200">
-          <tr v-for="note in filteredNotes" :key="note.id">
-            <td class="px-6 py-4 whitespace-nowrap text-sm">{{ note.type }}</td>
-            <td class="px-6 py-4 text-sm">{{ note.title }}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm">{{ note.member?.fullName || '-' }}</td>
+            <tr v-if="!notes.length">
+              <td colspan="6" class="px-6 py-4 text-center text-base text-gray-500">No notes found</td>
+            </tr>
+            <tr v-for="note in notes" :key="note.id">
+              <td class="px-6 py-4 whitespace-nowrap text-base">{{ note.type }}</td>
+              <td class="px-6 py-4 text-base">{{ note.title }}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-base">{{ note.member?.fullName || '-' }}</td>
             <td class="px-6 py-4 whitespace-nowrap">
               <span :class="getPriorityClass(note.priority)" class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full">
                 {{ note.priority }}
@@ -99,7 +145,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, computed, watch } from 'vue';
 import { noteService } from '../services/noteService';
 import Button from '../components/Button.vue';
 import Modal from '../components/Modal.vue';
@@ -107,7 +153,13 @@ import { useToast } from '../utils/toast';
 
 const { showToast } = useToast();
 const notes = ref<any[]>([]);
+const pagination = ref<any>(null);
+const currentPage = ref(1);
+const pageSize = ref(10);
 const searchQuery = ref('');
+const typeFilter = ref('');
+const priorityFilter = ref('');
+const statusFilter = ref('');
 const showCreateModal = ref(false);
 const showEditModal = ref(false);
 const editingId = ref<number | null>(null);
@@ -119,13 +171,33 @@ const form = ref({
   status: 'unresolved'
 });
 
-const filteredNotes = computed(() => {
-  if (!searchQuery.value) return notes.value;
-  const query = searchQuery.value.toLowerCase();
-  return notes.value.filter((n) =>
-    n.title.toLowerCase().includes(query) ||
-    n.content.toLowerCase().includes(query)
-  );
+const visiblePages = computed(() => {
+  if (!pagination.value) return [];
+  
+  const total = pagination.value.totalPages;
+  const current = pagination.value.page;
+  const pages: (number | string)[] = [];
+  
+  if (total <= 7) {
+    for (let i = 1; i <= total; i++) {
+      pages.push(i);
+    }
+  } else {
+    pages.push(1);
+    if (current > 3) {
+      pages.push('...');
+    }
+    const start = Math.max(2, current - 1);
+    const end = Math.min(total - 1, current + 1);
+    for (let i = start; i <= end; i++) {
+      pages.push(i);
+    }
+    if (current < total - 2) {
+      pages.push('...');
+    }
+    pages.push(total);
+  }
+  return pages;
 });
 
 const getPriorityClass = (priority: string) => {
@@ -139,12 +211,39 @@ const getPriorityClass = (priority: string) => {
 
 const loadNotes = async () => {
   try {
-    const response = await noteService.getAll();
+    const params: any = {
+      page: currentPage.value,
+      limit: pageSize.value
+    };
+    if (searchQuery.value) params.search = searchQuery.value;
+    if (typeFilter.value) params.type = typeFilter.value;
+    if (priorityFilter.value) params.priority = priorityFilter.value;
+    if (statusFilter.value) params.status = statusFilter.value;
+    
+    const response = await noteService.getAll(params);
     notes.value = response.notes;
+    pagination.value = response.pagination;
   } catch (error) {
     showToast('Failed to load notes', 'error');
   }
 };
+
+const goToPage = (page: number | string) => {
+  if (typeof page === 'string' || !pagination.value) return;
+  if (page < 1 || page > pagination.value.totalPages) return;
+  currentPage.value = page;
+  loadNotes();
+};
+
+const handleSearch = () => {
+  currentPage.value = 1;
+  loadNotes();
+};
+
+watch([typeFilter, priorityFilter, statusFilter], () => {
+  currentPage.value = 1;
+  loadNotes();
+});
 
 const saveNote = async () => {
   try {
